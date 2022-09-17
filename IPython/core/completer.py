@@ -1173,8 +1173,14 @@ class IPCompleter(Completer):
         #regexp to parse docstring for function signature
         self.docstring_sig_re = re.compile(r'^[\w|\s.]+\(([^)]*)\).*')
         self.docstring_kwd_re = re.compile(r'[\s|\[]*(\w+)(?:\s*=\s*.*)')
-        #use this if positional argument name is also needed
-        #= re.compile(r'[\s|\[]*(\w+)(?:\s*=?\s*.*)')
+        # use this if positional argument name is also needed
+        # = re.compile(r'[\s|\[]*(\w+)(?:\s*=?\s*.*)')
+        self.docstring_param_re = re.compile(r':param (.*):')
+
+        self._default_arguments_from_docstring_funcs = [
+            self._default_arguments_from_docstring_firstline,
+            self._default_arguments_from_docstring_params
+        ]
 
         self.magic_arg_matchers = [
             self.magic_config_matches,
@@ -1498,21 +1504,18 @@ class IPCompleter(Completer):
             matches = self.global_matches(text)
         return matches
 
-    def _default_arguments_from_docstring(self, doc):
+    def _default_arguments_from_docstring_firstline(self, doc):
         """Parse the first line of docstring for call signature.
 
         Docstring should be of the form 'min(iterable[, key=func])\n'.
         It can also parse cython docstring of the form
         'Minuit.migrad(self, int ncall=10000, resume=True, int nsplit=1)'.
         """
-        if doc is None:
-            return []
-
-        #care only the firstline
+        # care only the firstline
         line = doc.lstrip().splitlines()[0]
-
-        #p = re.compile(r'^[\w|\s.]+\(([^)]*)\).*')
-        #'min(iterable[, key=func])\n' -> 'iterable[, key=func]'
+        
+        # re.compile(r'^[\w|\s.]+\(([^)]*)\).*')
+        # 'min(iterable[, key=func])\n' -> 'iterable[, key=func]'
         sig = self.docstring_sig_re.search(line)
         if sig is None:
             return []
@@ -1520,9 +1523,25 @@ class IPCompleter(Completer):
         sig = sig.groups()[0].split(',')
         ret = []
         for s in sig:
-            #re.compile(r'[\s|\[]*(\w+)(?:\s*=\s*.*)')
+            # re.compile(r'[\s|\[]*(\w+)(?:\s*=\s*.*)')
             ret += self.docstring_kwd_re.findall(s)
         return ret
+    
+    def _default_arguments_from_docstring_params(self, doc):
+        """Parse the docstring for param declarations.
+
+        Docstring should contain line of the form ':param number: this is a number\n'.
+        """
+        # re.compile(r':param (.*):')
+        return self.docstring_param_re.findall(doc)
+    
+    def _default_arguments_from_docstring(self, doc):
+        """Parse the docstring for argument hits.
+        Runs all _default_arguments_from_docstring_funcs on the docstring to find possible argument names
+        """
+        if doc is None:
+            return []
+        return sum((func(doc) for func in self._default_arguments_from_docstring_funcs), start=[])
 
     def _default_arguments(self, obj):
         """Return the list of default arguments of obj if it is callable,
